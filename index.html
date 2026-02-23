@@ -2,15 +2,25 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Мой Firebase проект+</title>
+    <title>Firebase Live Project</title>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 50px; background-color: #f4f4f9; }
-        .form-container { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 300px; }
-        input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: #4b4b00; border: none; color: white; font-weight: bold; cursor: pointer; border-radius: 5px; }
-        button:hover { background: #dfa00b; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 50px; background-color: #f0f2f5; }
+        .form-container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 320px; margin-bottom: 20px; }
+        h3 { margin-top: 0; color: #333; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; transition: border 0.3s; }
+        input:focus { border-color: #4b4b00; outline: none; }
+        button { width: 100%; padding: 12px; background: #4b4b00; border: none; color: white; font-weight: bold; cursor: pointer; border-radius: 6px; transition: 0.3s; }
+        button:hover { background: #6b6b00; transform: translateY(-1px); }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        
+        #counter { margin-top: 15px; font-size: 0.85em; color: #777; border-top: 1px solid #eee; padding-top: 10px; }
 
-        #counter { margin-top: 20px; font-size: 0.9em; color: #666; }
+        .recent-orders { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: 320px; }
+        .recent-orders h4 { margin: 0 0 10px 0; font-size: 0.9em; color: #555; text-transform: uppercase; letter-spacing: 1px; }
+        .order-item { font-size: 0.9em; padding: 8px 0; border-bottom: 1px solid #fafafa; color: #444; display: flex; align-items: center; }
+        .order-item:last-child { border-bottom: none; }
+        .order-item::before { content: "⚡"; margin-right: 8px; font-size: 10px; }
+        .time { margin-left: auto; color: #bbb; font-size: 0.8em; }
     </style>
 </head>
 <body>
@@ -25,10 +35,14 @@
     <div id="counter">Загрузка счетчика...</div>
 </div>
 
-<script type="module">
+<div class="recent-orders">
+    <h4>Последние активности</h4>
+    <div id="recentList">Ожидание данных...</div>
+</div>
 
+<script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
 
     const firebaseConfig = {
@@ -41,43 +55,52 @@
         measurementId: "G-H68ETEEG64"
     };
 
-
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
     const auth = getAuth(app);
 
-    signInAnonymously(auth)
-        .then(() => console.log("Вход выполнен анонимно"))
-        .catch((error) => console.error("Ошибка входа:", error));
-
+    signInAnonymously(auth).catch(console.error);
 
     onSnapshot(collection(db, "requests"), (snapshot) => {
-        const count = snapshot.size;
-        document.getElementById("counter").innerText = `Всего заявок в базе: ${count}`;
+        document.getElementById("counter").innerText = `Всего заявок в базе: ${snapshot.size}`;
     });
 
+    const q = query(collection(db, "requests"), orderBy("timestamp", "desc"), limit(5));
+    
+    onSnapshot(q, (snapshot) => {
+        const listDiv = document.getElementById("recentList");
+        listDiv.innerHTML = "";
+
+        snapshot.forEach((doc) => {
+            const data = doc.data();
+            const item = document.createElement("div");
+            item.className = "order-item";
+            
+            const timeStr = data.timestamp ? new Date(data.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : "...";
+            
+            item.innerHTML = `<span><strong>${data.name}</strong> отправил заявку</span> <span class="time">${timeStr}</span>`;
+            listDiv.appendChild(item);
+        });
+
+        if (snapshot.empty) listDiv.innerText = "Пока нет заявок";
+    });
 
     document.getElementById("feedbackForm").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const submitBtn = document.getElementById("submitBtn");
-        submitBtn.disabled = true;
-
-        const nameInput = document.getElementById("userName").value;
-        const emailInput = document.getElementById("userEmail").value;
+        const btn = document.getElementById("submitBtn");
+        btn.disabled = true;
 
         try {
             await addDoc(collection(db, "requests"), {
-                name: nameInput,
-                email: emailInput,
+                name: document.getElementById("userName").value,
+                email: document.getElementById("userEmail").value,
                 timestamp: new Date()
             });
-            alert("Готово! Данные сохранены.");
             document.getElementById("feedbackForm").reset();
-        } catch (error) {
-            console.error("Ошибка записи: ", error);
-            alert("Ошибка при отправке. Проверьте правила доступа в консоли Firebase.");
+        } catch (e) {
+            alert("Ошибка! Проверь консоль.");
         } finally {
-            submitBtn.disabled = false;
+            btn.disabled = false;
         }
     });
 </script>
